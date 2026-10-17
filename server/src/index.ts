@@ -2,6 +2,7 @@ import 'dotenv/config';
 import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
+import path from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { auth, errors } from './middleware.js';
 import { createAnalyticsRouter } from './routes/analytics.js';
@@ -75,5 +76,14 @@ app.use('/api', createAnalyticsRouter(db));
 app.use('/api', createSettingsRouter(db));
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Route API introuvable.' }));
+
+if (process.env.NODE_ENV === 'production') {
+  const clientDirectory = path.resolve(process.cwd(), 'client/dist');
+  app.use(express.static(clientDirectory));
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(clientDirectory, 'index.html'));
+  });
+}
+
 app.use(errors);
 app.listen(port, () => console.log(`API active sur http://localhost:${port}`));
