@@ -1,0 +1,249 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum MouvementType {
+  ACHAT
+  VENTE
+  APPROVISIONNEMENT_CHAUFFEUR
+}
+
+enum MouvementCompteType {
+  APPROVISIONNEMENT
+  VENTE
+  ANNULATION
+}
+
+model Utilisateur {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  motDePasse    String
+  role          String         @default("ADMIN")
+  creeLe        DateTime       @default(now())
+  refreshTokens RefreshToken[]
+}
+
+model RefreshToken {
+  id        String      @id @default(cuid())
+  userId    String
+  user      Utilisateur @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String      @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime    @default(now())
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt])
+}
+
+model Carburant {
+  id                String                    @id @default(cuid())
+  nom               String                    @unique
+  couleur           String
+  prixVente         Decimal                   @db.Decimal(12, 2)
+  stock             Decimal                   @default(0) @db.Decimal(14, 3)
+  coutMoyenUSD      Decimal                   @default(0) @db.Decimal(16, 6)
+  derniereMiseAJour DateTime                  @updatedAt
+  achats            Achat[]
+  ventes            Vente[]
+  mouvements        MouvementStock[]
+  soldesChauffeurs  SoldeChauffeurCarburant[]
+  mouvementsComptes MouvementCompte[]
+}
+
+model Achat {
+  id              String    @id @default(cuid())
+  carburantId     String
+  carburant       Carburant @relation(fields: [carburantId], references: [id])
+  quantite        Decimal   @db.Decimal(14, 3)
+  prixUnitaire    Decimal   @db.Decimal(12, 2)
+  montant         Decimal   @db.Decimal(14, 2)
+  devise          String    @default("USD")
+  montantConverti Decimal   @default(0) @db.Decimal(16, 2)
+  deviseConvertie String    @default("USD")
+  tauxUtilise     Decimal   @default(1) @db.Decimal(16, 6)
+  montantUSD      Decimal   @default(0) @db.Decimal(16, 2)
+  fournisseur     String
+  date            DateTime
+  creeLe          DateTime  @default(now())
+  idempotencyKey  String?   @unique
+  requestHash     String?
+
+  @@index([date, id])
+  @@index([carburantId, date])
+}
+
+model Vente {
+  id                    String     @id @default(cuid())
+  carburantId           String
+  carburant             Carburant  @relation(fields: [carburantId], references: [id])
+  quantite              Decimal    @db.Decimal(14, 3)
+  prixUnitaire          Decimal    @db.Decimal(12, 2)
+  montant               Decimal    @db.Decimal(14, 2)
+  devise                String     @default("USD")
+  montantConverti       Decimal    @default(0) @db.Decimal(16, 2)
+  deviseConvertie       String     @default("USD")
+  tauxUtilise           Decimal    @default(1) @db.Decimal(16, 6)
+  montantUSD            Decimal    @default(0) @db.Decimal(16, 2)
+  /// Coût moyen pondéré unitaire du carburant au moment de la vente, en USD.
+  coutUnitaireUSD       Decimal    @default(0) @db.Decimal(16, 6)
+  coutTotalUSD          Decimal    @default(0) @db.Decimal(16, 2)
+  /// Copie du coût unitaire retenu pour conserver le calcul historique de cette vente.
+  prixAchatReferenceUSD Decimal    @default(0) @db.Decimal(16, 6)
+  beneficeUSD           Decimal    @default(0) @db.Decimal(16, 2)
+  clientNom             String?
+  clientTelephone       String?
+  clientPlaque          String?
+  clientMarque          String?
+  chauffeurId           String?
+  chauffeur             Chauffeur? @relation(fields: [chauffeurId], references: [id], onDelete: SetNull)
+  debitUSD              Decimal    @default(0) @db.Decimal(16, 2)
+  debitCDF              Decimal    @default(0) @db.Decimal(16, 2)
+  debitLitres           Decimal    @default(0) @db.Decimal(14, 3)
+  soldeChauffeurApres   Decimal?   @db.Decimal(14, 3)
+  date                  DateTime
+  creeLe                DateTime   @default(now())
+  idempotencyKey        String?    @unique
+  requestHash           String?
+
+  @@index([date, id])
+  @@index([carburantId, date])
+}
+
+model Entreprise {
+  id         String      @id @default(cuid())
+  nom        String      @unique
+  telephone  String?
+  creeLe     DateTime    @default(now())
+  chauffeurs Chauffeur[]
+}
+
+model Chauffeur {
+  id              String                    @id @default(cuid())
+  entrepriseId    String
+  entreprise      Entreprise                @relation(fields: [entrepriseId], references: [id], onDelete: Restrict)
+  nom             String
+  telephone       String
+  plaque          String
+  marque          String
+  soldeUSD        Decimal                   @default(0) @db.Decimal(16, 2)
+  soldeCDF        Decimal                   @default(0) @db.Decimal(16, 2)
+  actif           Boolean                   @default(true)
+  creeLe          DateTime                  @default(now())
+  misAJourLe      DateTime                  @updatedAt
+  ventes          Vente[]
+  mouvements      MouvementCompte[]
+  soldes          SoldeChauffeurCarburant[]
+  mouvementsStock MouvementStock[]
+
+  @@unique([entrepriseId, plaque])
+  @@index([entrepriseId, nom])
+}
+
+model SoldeChauffeurCarburant {
+  id                 String    @id @default(cuid())
+  chauffeurId        String
+  chauffeur          Chauffeur @relation(fields: [chauffeurId], references: [id], onDelete: Restrict)
+  carburantId        String
+  carburant          Carburant @relation(fields: [carburantId], references: [id], onDelete: Restrict)
+  quantite           Decimal   @default(0) @db.Decimal(14, 3)
+  coutMoyenUSD       Decimal   @default(0) @db.Decimal(16, 6)
+  prixMoyenPrepayUSD Decimal   @default(0) @db.Decimal(16, 6)
+  misAJourLe         DateTime  @updatedAt
+
+  @@unique([chauffeurId, carburantId])
+  @@index([carburantId])
+}
+
+model MouvementCompte {
+  id              String              @id @default(cuid())
+  chauffeurId     String
+  chauffeur       Chauffeur           @relation(fields: [chauffeurId], references: [id], onDelete: Restrict)
+  carburantId     String?
+  carburant       Carburant?          @relation(fields: [carburantId], references: [id], onDelete: Restrict)
+  type            MouvementCompteType
+  montant         Decimal             @db.Decimal(16, 2)
+  devise          String
+  variationUSD    Decimal             @db.Decimal(16, 2)
+  variationCDF    Decimal             @db.Decimal(16, 2)
+  soldeUSD        Decimal             @db.Decimal(16, 2)
+  soldeCDF        Decimal             @db.Decimal(16, 2)
+  tauxUtilise     Decimal             @db.Decimal(16, 6)
+  quantite        Decimal?            @db.Decimal(14, 3)
+  variationLitres Decimal?            @db.Decimal(14, 3)
+  soldeLitres     Decimal?            @db.Decimal(14, 3)
+  description     String?
+  referenceVente  String?             @unique
+  idempotencyKey  String?             @unique
+  requestHash     String?
+  date            DateTime            @default(now())
+  creeLe          DateTime            @default(now())
+
+  @@index([chauffeurId, creeLe])
+}
+
+model CategorieDepense {
+  id       String    @id @default(cuid())
+  nom      String    @unique
+  depenses Depense[]
+}
+
+model Depense {
+  id              String           @id @default(cuid())
+  categorieId     String
+  categorie       CategorieDepense @relation(fields: [categorieId], references: [id])
+  description     String
+  montant         Decimal          @db.Decimal(14, 2)
+  devise          String           @default("USD")
+  montantConverti Decimal          @default(0) @db.Decimal(16, 2)
+  deviseConvertie String           @default("USD")
+  tauxUtilise     Decimal          @default(1) @db.Decimal(16, 6)
+  montantUSD      Decimal          @default(0) @db.Decimal(16, 2)
+  date            DateTime
+  creeLe          DateTime         @default(now())
+  idempotencyKey  String?          @unique
+  requestHash     String?
+
+  @@index([date, id])
+  @@index([categorieId, date])
+}
+
+model MouvementStock {
+  id          String        @id @default(cuid())
+  carburantId String
+  carburant   Carburant     @relation(fields: [carburantId], references: [id])
+  type        MouvementType
+  quantite    Decimal       @db.Decimal(14, 3)
+  referenceId String
+  chauffeurId String?
+  chauffeur   Chauffeur?    @relation(fields: [chauffeurId], references: [id], onDelete: Restrict)
+  date        DateTime
+  creeLe      DateTime      @default(now())
+
+  @@index([carburantId, date])
+  @@index([chauffeurId])
+}
+
+model Parametre {
+  id     String @id @default(cuid())
+  devise String @default("USD")
+}
+
+model TauxJournalier {
+  id           String   @id @default(cuid())
+  date         DateTime @db.Date
+  deviseSource String   @default("USD")
+  deviseCible  String
+  taux         Decimal  @db.Decimal(16, 6)
+  creeLe       DateTime @default(now())
+  misAJourLe   DateTime @updatedAt
+
+  @@unique([date, deviseSource, deviseCible])
+  @@index([date])
+}

@@ -1,0 +1,25 @@
+{
+  "name": "station-carburant",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "concurrently -k \"npm run dev -w server\" \"npm run dev -w client\"",
+    "build": "npm run build -w server && npm run build -w client",
+    "test": "npm test -w server",
+    "format": "prettier --write \"client/src/**/*.{ts,tsx,css}\" \"server/src/**/*.ts\" \"server/prisma/**/*.ts\" \"client/*.{json,js,ts}\" \"server/*.{json,ts}\" \"*.{json,md,yml}\"",
+    "format:check": "prettier --check \"client/src/**/*.{ts,tsx,css}\" \"server/src/**/*.ts\" \"server/prisma/**/*.ts\" \"client/*.{json,js,ts}\" \"server/*.{json,ts}\" \"*.{json,md,yml}\"",
+    "db:migrate": "npm run db:migrate -w server",
+    "db:seed": "npm run db:seed -w server",
+    "db:reset-admin": "npm run db:reset-admin -w server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "overrides": {
+    "deepmerge-ts": "8.0.1"
+  }
+}

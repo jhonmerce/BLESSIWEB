@@ -1,0 +1,48 @@
+services:
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migration
+    restart: "no"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://station:station_dev_only@db:5432/station}
+      DIRECT_URL: ${DIRECT_URL:-postgresql://station:station_dev_only@db:5432/station}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@station.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Définissez ADMIN_PASSWORD dans .env}
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN_DOCKER:-http://localhost:8080}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://station:station_dev_only@db:5432/station}
+      DIRECT_URL: ${DIRECT_URL:-postgresql://station:station_dev_only@db:5432/station}
+      JWT_SECRET: ${JWT_SECRET:?Définissez JWT_SECRET dans .env}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
+      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-30}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@station.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Définissez ADMIN_PASSWORD dans .env}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: web
+    restart: unless-stopped
+    environment:
+      API_UPSTREAM: ${API_UPSTREAM:-api:3000}
+    ports:
+      - "${WEB_PORT:-8080}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+
