@@ -12,6 +12,7 @@ import {
   Receipt,
   Search,
   Trash2,
+  Pencil,
   X,
 } from 'lucide-react';
 import type { AnyRow } from '../types';
@@ -29,6 +30,7 @@ export default function Operations({
   page,
   setPage,
   open,
+  edit,
   remove,
   exportRows,
   req,
@@ -43,6 +45,7 @@ export default function Operations({
   page: number;
   setPage: (x: number) => void;
   open: () => void;
+  edit: (row: AnyRow) => void;
   remove: (t: string, id: string) => Promise<void>;
   exportRows: (r: AnyRow[], n: string) => void;
   req: (path: string, init?: RequestInit) => Promise<any>;
@@ -426,6 +429,15 @@ export default function Operations({
                     </>
                   )}
                   <td className="px-4 py-3.5 text-right">
+                    <button
+                      type="button"
+                      title="Modifier cette opération"
+                      aria-label={`Modifier l’opération ${x.id}`}
+                      onClick={() => edit(x)}
+                      className="rounded-lg p-2 text-blue-600 hover:bg-blue-50"
+                    >
+                      <Pencil size={14} />
+                    </button>
                     {kind === 'ventes' && !x.chauffeur && !x.chauffeurId && (
                       <button
                         type="button"
@@ -521,6 +533,7 @@ export default function Operations({
 export function OperationModal({
   kind,
   form,
+  editing = false,
   setForm,
   fuels,
   cats,
@@ -536,6 +549,7 @@ export function OperationModal({
 }: {
   kind: string;
   form: AnyRow;
+  editing?: boolean;
   setForm: (x: AnyRow) => void;
   fuels: AnyRow[];
   cats: string[];
@@ -583,14 +597,27 @@ export function OperationModal({
   const amount =
     isSale || isPurchase ? Number(form.quantite || 0) * unitPrice : Number(form.montant || 0);
   const converted = conversionRate ? Math.round(amount * conversionRate * 100) / 100 : null;
-  const available = Number(fuel?.stock || 0);
+  const available =
+    Number(fuel?.stock || 0) +
+    (editing &&
+    isSale &&
+    !form._originalChauffeurId &&
+    form._originalCarburantId === form.carburantId
+      ? Number(form._originalQuantite || 0)
+      : 0);
   const requiresStationStock = isSale && !form.chauffeurId;
   const clientTelephone = String(form.clientTelephone || '').trim();
   const clientTelephoneValid = !clientTelephone || /^[+0-9().\-\s]+$/.test(clientTelephone);
   const driverBalance = Number(
     selectedDriver?.soldes?.find((balance: AnyRow) => balance.carburantId === fuel?.id)?.quantite ||
       0,
-  );
+  ) +
+    (editing &&
+    isSale &&
+    form._originalChauffeurId === selectedDriver?.id &&
+    form._originalCarburantId === fuel?.id
+      ? Number(form._originalQuantite || 0)
+      : 0);
   return (
     <div
       className="fixed inset-0 z-40 flex items-center justify-center bg-ink/40 p-4"
@@ -604,7 +631,17 @@ export function OperationModal({
         <div className="mb-5 flex items-center justify-between">
           <div>
             <h2 className="title text-xl font-bold text-ink">
-              {isPurchase ? 'Nouvel achat' : isSale ? 'Nouvelle vente' : 'Nouvelle dépense'}
+              {editing
+                ? isPurchase
+                  ? 'Modifier l’achat'
+                  : isSale
+                    ? 'Modifier la vente'
+                    : 'Modifier la dépense'
+                : isPurchase
+                  ? 'Nouvel achat'
+                  : isSale
+                    ? 'Nouvelle vente'
+                    : 'Nouvelle dépense'}
             </h2>
             <p className="mt-1 text-xs text-muted">Renseignez les informations de l’opération.</p>
           </div>
@@ -963,7 +1000,7 @@ export function OperationModal({
             onClick={save}
             className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Enregistrer l’opération
+            {editing ? 'Enregistrer les modifications' : 'Enregistrer l’opération'}
           </button>
         </div>
         {saving && (

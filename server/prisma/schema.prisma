@@ -247,3 +247,19 @@ model TauxJournalier {
   @@unique([date, deviseSource, deviseCible])
   @@index([date])
 }
+
+model JournalModification {
+  id         String   @id @default(cuid())
+  entite     String
+  entiteId   String
+  action     String
+  acteurId   String
+  acteurEmail String
+  avant      Json
+  apres      Json
+  creeLe     DateTime @default(now())
+
+  @@index([creeLe])
+  @@index([entite, entiteId])
+  @@index([acteurId, creeLe])
+}

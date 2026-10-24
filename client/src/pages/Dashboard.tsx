@@ -66,7 +66,7 @@ export default function Dashboard({
           </button>
         }
       />
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Metric
           label="Chiffre d’affaires"
           value={money(Number(dash.revenu ?? 0), dash.devise || 'USD')}
@@ -97,6 +97,14 @@ export default function Dashboard({
           icon={Droplets}
           tone="purple"
           foot="de carburant"
+        />
+        <Metric
+          label="Volume total acheté"
+          value={`${nfmt(Number(dash.achatsLitres ?? 0))} L`}
+          change="Cumul des achats"
+          icon={ArrowDownLeft}
+          tone="blue"
+          foot="non diminué par les ventes"
         />
       </div>
       <div className="mb-5 grid gap-5 xl:grid-cols-[1.65fr_1fr]">

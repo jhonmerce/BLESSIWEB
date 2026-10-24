@@ -16,6 +16,7 @@ import {
   CircleHelp,
   ChevronDown,
   Truck,
+  ClipboardList,
 } from 'lucide-react';
 import type { AnyRow } from './types';
 import Operations, { OperationModal } from './pages/Operations';
@@ -29,6 +30,7 @@ const Reports = lazy(() => import('./pages/Reports'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const Login = lazy(() => import('./pages/Login'));
 const Drivers = lazy(() => import('./pages/Drivers'));
+const ModificationJournal = lazy(() => import('./pages/ModificationJournal'));
 
 type SessionUser = {
   email: string;
@@ -44,6 +46,7 @@ const nav = [
   ['/depenses', 'Dépenses', Receipt],
   ['/stocks', 'Stocks', Fuel],
   ['/historiques/achats', 'Historiques', HistoryIcon],
+  ['/journal-modifications', 'Journal des modifications', ClipboardList],
   ['/rapports', 'Rapports', BarChart3],
   ['/parametres', 'Paramètres', Settings],
 ] as const;
@@ -157,7 +160,16 @@ export default function App() {
       }
       if (!r.ok) {
         const e = await r.json().catch(() => ({}));
-        throw Error(e.error || 'Erreur de connexion');
+        const details = Array.isArray(e.details)
+          ? e.details
+              .map((item: { path?: unknown; message?: unknown }) => {
+                const path = Array.isArray(item.path) ? item.path.join('.') : '';
+                return [path, item.message].filter(Boolean).join(' : ');
+              })
+              .filter(Boolean)
+              .join(' · ')
+          : '';
+        throw Error([e.error || 'Erreur de connexion', details].filter(Boolean).join(' '));
       }
       return r.status === 204 ? null : r.json();
     },
@@ -251,6 +263,23 @@ export default function App() {
     setFuels(fuelRows);
     setStockMovements(movements);
   };
+  const refreshDashboard = async () => {
+    if (sessionUserRef.current?.role !== 'ADMIN') return;
+    setDash(await req('/dashboard'));
+  };
+  const editOperation = (type: string, operation: AnyRow) => {
+    setKind(type);
+    setForm({
+      ...operation,
+      date: String(operation.date || '').slice(0, 10),
+      entrepriseId: operation.chauffeur?.entrepriseId || '',
+      _originalCarburantId: operation.carburantId,
+      _originalQuantite: operation.quantite,
+      _originalChauffeurId: operation.chauffeurId || '',
+    });
+    operationIdempotency.current = null;
+    setModal(true);
+  };
   const deleteRow = async (type: string, id: string) => {
     if (
       !confirm(
@@ -264,6 +293,7 @@ export default function App() {
         await req(`/${type}/${id}`, { method: 'DELETE' });
         if (type === 'ventes') await refreshDrivers();
         else if (type === 'achats') await refreshInventory();
+        await refreshDashboard();
         setItems((current) => ({
           ...current,
           [type]: current[type as keyof typeof current].filter((row) => row.id !== id),
@@ -346,7 +376,11 @@ export default function App() {
         </div>
         <nav className="flex-1 space-y-1">
           {nav
-            .filter(([to]) => sessionUser?.role === 'ADMIN' || to !== '/tableau-de-bord')
+            .filter(([to]) =>
+              to === '/journal-modifications'
+                ? sessionUser?.role === 'ADMIN'
+                : sessionUser?.role === 'ADMIN' || to !== '/tableau-de-bord',
+            )
             .map(([to, label, Icon]) => (
             <Link
               onClick={() => setMobile(false)}
@@ -485,6 +519,7 @@ export default function App() {
                         operationIdempotency.current = null;
                         setModal(true);
                       }}
+                      edit={(row) => editOperation('achats', row)}
                       remove={deleteRow}
                       exportRows={exportRows}
                       req={req}
@@ -512,6 +547,7 @@ export default function App() {
                         });
                         setModal(true);
                       }}
+                      edit={(row) => editOperation('ventes', row)}
                       chauffeurs={drivers}
                       remove={deleteRow}
                       exportRows={exportRows}
@@ -536,6 +572,7 @@ export default function App() {
                         setForm({ date: new Date().toISOString().slice(0, 10), devise: currency });
                         setModal(true);
                       }}
+                      edit={(row) => editOperation('depenses', row)}
                       remove={deleteRow}
                       exportRows={exportRows}
                       req={req}
@@ -587,11 +624,29 @@ export default function App() {
                       page={page}
                       setPage={setPage}
                       open={() => {}}
+                      edit={(row) => editOperation(
+                        loc.pathname.split('/').pop() === 'achats'
+                          ? 'achats'
+                          : loc.pathname.split('/').pop() === 'ventes'
+                            ? 'ventes'
+                            : 'depenses',
+                        row,
+                      )}
                       remove={deleteRow}
                       exportRows={exportRows}
                       req={req}
                       historical
                     />
+                  }
+                />
+                <Route
+                  path="/journal-modifications"
+                  element={
+                    sessionUser?.role === 'ADMIN' ? (
+                      <ModificationJournal req={req} />
+                    ) : (
+                      <Navigate to="/ventes" replace />
+                    )
                   }
                 />
                 <Route path="/rapports" element={<Reports fuels={fuels} req={req} />} />
@@ -634,6 +689,7 @@ export default function App() {
         <OperationModal
           kind={kind}
           form={form}
+          editing={Boolean(form.id)}
           setForm={setForm}
           fuels={fuels}
           cats={catsState}
@@ -653,8 +709,9 @@ export default function App() {
             if (savingOperationRef.current) return;
             savingOperationRef.current = true;
             setSavingOperation(true);
+            const editing = Boolean(form.id);
             setOperationStatus(
-              kind === 'achats'
+              editing ? 'Application des modifications…' : kind === 'achats'
                 ? 'Enregistrement de l’achat…'
                 : kind === 'ventes'
                   ? 'Enregistrement de la vente…'
@@ -686,16 +743,18 @@ export default function App() {
                 date: new Date(form.date).toISOString(),
               };
               const fingerprint = JSON.stringify(body);
-              if (operationIdempotency.current?.payload !== fingerprint) {
+              if (!editing && operationIdempotency.current?.payload !== fingerprint) {
                 operationIdempotency.current = { payload: fingerprint, key: crypto.randomUUID() };
               }
-              const idempotencyKey = operationIdempotency.current.key;
-              const row = await req(`/${kind}`, {
-                method: 'POST',
-                headers: { 'Idempotency-Key': idempotencyKey },
+              const idempotencyKey = operationIdempotency.current?.key;
+              const row = await req(editing ? `/${kind}/${form.id}` : `/${kind}`, {
+                method: editing ? 'PATCH' : 'POST',
+                ...(!editing && idempotencyKey
+                  ? { headers: { 'Idempotency-Key': idempotencyKey } }
+                  : {}),
                 body: JSON.stringify(body),
               });
-              if (kind === 'ventes' && row.chauffeurId) {
+              if (!editing && kind === 'ventes' && row.chauffeurId) {
                 setOperationStatus('Génération du bordereau de sortie…');
                 await downloadExitVoucher(row);
               }
@@ -706,7 +765,7 @@ export default function App() {
                   ...current[kind as keyof typeof current].filter((item) => item.id !== row.id),
                 ],
               }));
-              if (kind === 'ventes' && form.chauffeurId) {
+              if (kind === 'ventes') {
                 setOperationStatus('Actualisation du compte chauffeur…');
                 await refreshDrivers();
               }
@@ -714,9 +773,10 @@ export default function App() {
                 setOperationStatus('Mise à jour du stock…');
                 await refreshInventory();
               }
+              await refreshDashboard();
               setModal(false);
               operationIdempotency.current = null;
-              toastMsg('Enregistrement réalisé avec succès.');
+              toastMsg(editing ? 'Opération modifiée avec succès.' : 'Enregistrement réalisé avec succès.');
             } catch (e) {
               toastMsg((e as Error).message);
             } finally {

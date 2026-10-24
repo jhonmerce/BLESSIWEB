@@ -17,6 +17,7 @@ export function createAnalyticsRouter(db: PrismaClient) {
       const [
         sales,
         purchases,
+        purchasedVolume,
         expenses,
         fuel,
         daySales,
@@ -34,6 +35,9 @@ export function createAnalyticsRouter(db: PrismaClient) {
           db.achat.aggregate({
             where: { date: { gte: start, lt: end } },
             _sum: { montantUSD: true },
+          }),
+          db.achat.aggregate({
+            _sum: { quantite: true },
           }),
           db.depense.aggregate({
             where: { date: { gte: start, lt: end } },
@@ -76,6 +80,7 @@ export function createAnalyticsRouter(db: PrismaClient) {
       r.json({
         revenu,
         achats: achat,
+        achatsLitres: Number(purchasedVolume._sum.quantite || 0),
         depenses: depense,
         beneficeBrut,
         benefice: beneficeBrut - depense,
